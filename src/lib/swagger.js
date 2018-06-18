@@ -168,7 +168,7 @@ function parseSecurity(comments) {
     return security
 }
 
-function fileFormat(comments) {
+function fileFormat(comments, swaggerObject) {
 
     let route, parameters = {}, params = [], tags = [], definitions = {};
     for (let i in comments) {
@@ -196,17 +196,46 @@ function fileFormat(comments) {
                     })
                 }
                 if (title == 'param') {
+                    const props = [];
+                    
                     let field = parseField(comments[i][j]['name'])
                     let schema = parseSchema(comments[i][j]['type']);
 
-                    params.push({
-                        name: field.name,
-                        in: field.parameter_type,
-                        description: comments[i][j]['description'],
-                        required: field.required,
-                        type: !schema ? parseType(comments[i][j]['type']) : undefined,
-                        schema: schema
-                    })
+
+                    if (field.parameter_type == 'get' && swaggerObject != null && swaggerObject.definitions[comments[i][j]['type']['name']]) {
+                        const definition = swaggerObject.definitions[comments[i][j]['type']['name']];
+                        if (field.name === 'query') {
+                            Object.keys(definition.properties).forEach((name) => {
+                                const schema = parseSchema(definition.properties[name]['type']);
+                                params.push({
+                                   name: name,
+                                   in: 'query',
+                                   description: definition.properties[name].description || '',
+                                   required: definition.required.find((prop) => prop === name) != null,
+                                   type: !schema ? parseType(definition.properties[name]['type']) : undefined,
+                                   schema: schema
+                                });
+                            });
+                        } else if (field.name === 'body') {
+                            params.push({
+                                name: field.name,
+                                in: 'body',
+                                description: comments[i][j]['description'],
+                                required: field.required,
+                                type: !schema ? parseType(comments[i][j]['type']) : undefined,
+                                schema: schema
+                            });
+                        }
+                    } else {
+                        params.push({
+                            name: field.name,
+                            in: field.parameter_type,
+                            description: comments[i][j]['description'],
+                            required: field.required,
+                            type: !schema ? parseType(comments[i][j]['type']) : undefined,
+                            schema: schema
+                        });
+                    }
                 }
 
                 if (title == 'operationId' && route) {
@@ -330,7 +359,7 @@ module.exports = function (app) {
 
             for (let j in comments) {
 
-                let parsed = fileFormat(comments[j])
+                let parsed = fileFormat(comments[j], swaggerObject)
                 swaggerHelpers.addDataToSwaggerObject(swaggerObject, [{ paths: parsed.parameters, tags: parsed.tags, definitions: parsed.definitions }]);
             }
         }
